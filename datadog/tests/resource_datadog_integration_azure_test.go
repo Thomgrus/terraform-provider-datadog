@@ -39,14 +39,17 @@ resource "datadog_integration_azure" "an_azure_integration" {
   tenant_name   = "%s"
   client_id     = "testc7f6-1234-5678-9101-3fcbf464test"
   client_secret = "testingx./Sw*g/Y33t..R1cH+hScMDt"
+  app_service_plan_filters = "bar:baz,stinky:pete"
   automute      = true
+  cspm_enabled  = true
+  custom_metrics_enabled = true
 }`, uniq)
 }
 
 func TestAccDatadogIntegrationAzure(t *testing.T) {
 	t.Parallel()
 	ctx, accProviders := testAccProviders(context.Background(), t)
-	tenantName := uniqueEntityName(ctx, t)
+	tenantName := fmt.Sprintf("aaaaaaaa-bbbb-cccc-dddd-%dee", clockFromContext(ctx).Now().Unix())
 	accProvider := testAccProvider(t, accProviders)
 
 	resource.Test(t, resource.TestCase{
@@ -72,7 +75,16 @@ func TestAccDatadogIntegrationAzure(t *testing.T) {
 						"host_filters", "foo:bar,buzz:lightyear"),
 					resource.TestCheckResourceAttr(
 						"datadog_integration_azure.an_azure_integration",
+						"app_service_plan_filters", ""),
+					resource.TestCheckResourceAttr(
+						"datadog_integration_azure.an_azure_integration",
 						"automute", "false"),
+					resource.TestCheckResourceAttr(
+						"datadog_integration_azure.an_azure_integration",
+						"cspm_enabled", "false"),
+					resource.TestCheckResourceAttr(
+						"datadog_integration_azure.an_azure_integration",
+						"custom_metrics_enabled", "false"),
 					resource.TestCheckResourceAttr("datadog_integration_azure.an_azure_integration_two",
 						"tenant_name", tenantName),
 					resource.TestCheckResourceAttr(
@@ -98,7 +110,16 @@ func TestAccDatadogIntegrationAzure(t *testing.T) {
 						"host_filters", ""),
 					resource.TestCheckResourceAttr(
 						"datadog_integration_azure.an_azure_integration",
+						"app_service_plan_filters", "bar:baz,stinky:pete"),
+					resource.TestCheckResourceAttr(
+						"datadog_integration_azure.an_azure_integration",
 						"automute", "true"),
+					resource.TestCheckResourceAttr(
+						"datadog_integration_azure.an_azure_integration",
+						"cspm_enabled", "true"),
+					resource.TestCheckResourceAttr(
+						"datadog_integration_azure.an_azure_integration",
+						"custom_metrics_enabled", "true"),
 				),
 			},
 		},

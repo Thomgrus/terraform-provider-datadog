@@ -35,6 +35,7 @@ var Resources = []func() resource.Resource{
 	NewAPIKeyResource,
 	NewApmRetentionFilterResource,
 	NewApmRetentionFiltersOrderResource,
+	NewDashboardListResource,
 	NewDowntimeScheduleResource,
 	NewIntegrationCloudflareAccountResource,
 	NewIntegrationConfluentAccountResource,
@@ -49,12 +50,14 @@ var Resources = []func() resource.Resource{
 	NewSyntheticsConcurrencyCapResource,
 	NewTeamLinkResource,
 	NewTeamMembershipResource,
+	NewTeamPermissionSettingResource,
 	NewTeamResource,
 }
 
 var Datasources = []func() datasource.DataSource{
 	NewAPIKeyDataSource,
 	NewDatadogApmRetentionFiltersOrderDataSource,
+	NewDatadogDashboardListDataSource,
 	NewDatadogIntegrationAWSNamespaceRulesDatasource,
 	NewDatadogServiceAccountDatasource,
 	NewDatadogTeamDataSource,
@@ -348,12 +351,6 @@ func defaultConfigureFunc(p *FrameworkProvider, request *provider.ConfigureReque
 	ddClientConfig := datadog.NewConfiguration()
 	ddClientConfig.UserAgent = utils.GetUserAgentFramework(ddClientConfig.UserAgent, request.TerraformVersion)
 	ddClientConfig.Debug = logging.IsDebugOrHigher()
-
-	// Temp - enable Downtime v2 which is currently in private beta
-	ddClientConfig.SetUnstableOperationEnabled("v2.CancelDowntime", true)
-	ddClientConfig.SetUnstableOperationEnabled("v2.CreateDowntime", true)
-	ddClientConfig.SetUnstableOperationEnabled("v2.GetDowntime", true)
-	ddClientConfig.SetUnstableOperationEnabled("v2.UpdateDowntime", true)
 
 	if !config.ApiUrl.IsNull() && config.ApiUrl.ValueString() != "" {
 		parsedAPIURL, parseErr := url.Parse(config.ApiUrl.ValueString())

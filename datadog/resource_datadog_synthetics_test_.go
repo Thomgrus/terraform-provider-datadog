@@ -65,6 +65,7 @@ func resourceDatadogSyntheticsTest() *schema.Resource {
 				"request_basicauth":          syntheticsTestRequestBasicAuth(),
 				"request_proxy":              syntheticsTestRequestProxy(),
 				"request_client_certificate": syntheticsTestRequestClientCertificate(),
+				"request_metadata":           syntheticsTestRequestMetadata(),
 				"assertion":                  syntheticsAPIAssertion(),
 				"browser_variable":           syntheticsBrowserVariable(),
 				"config_variable":            syntheticsConfigVariable(),
@@ -221,6 +222,11 @@ func syntheticsTestRequest() *schema.Resource {
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
+			},
+			"persist_cookies": {
+				Description: "Persist cookies across redirects.",
+				Type:        schema.TypeBool,
+				Optional:    true,
 			},
 		},
 	}
@@ -411,6 +417,14 @@ func syntheticsTestRequestClientCertificateItem() *schema.Schema {
 	}
 }
 
+func syntheticsTestRequestMetadata() *schema.Schema {
+	return &schema.Schema{
+		Description: "Metadata to include when performing the gRPC test.",
+		Type:        schema.TypeMap,
+		Optional:    true,
+	}
+}
+
 func syntheticsAPIAssertion() *schema.Schema {
 	return &schema.Schema{
 		Description: "Assertions used for the test. Multiple `assertion` blocks are allowed with the structure below.",
@@ -489,6 +503,12 @@ func syntheticsAPIAssertion() *schema.Schema {
 							},
 						},
 					},
+				},
+				"timings_scope": {
+					Description:      "Timings scope for response time assertions.",
+					Type:             schema.TypeString,
+					Optional:         true,
+					ValidateDiagFunc: validators.ValidateEnumValue(datadogV1.NewSyntheticsAssertionTimingsScopeFromValue),
 				},
 			},
 		},
@@ -1446,8 +1466,11 @@ func buildSyntheticsAPITestStruct(d *schema.ResourceData) *datadogV1.SyntheticsA
 			request.SetService("")
 		}
 	}
+	if attr, ok := d.GetOk("request_definition.0.persist_cookies"); ok {
+		request.SetPersistCookies(attr.(bool))
+	}
 
-	request = *completeSyntheticsTestRequest(request, d.Get("request_headers").(map[string]interface{}), d.Get("request_query").(map[string]interface{}), d.Get("request_basicauth").([]interface{}), d.Get("request_client_certificate").([]interface{}), d.Get("request_proxy").([]interface{}))
+	request = *completeSyntheticsTestRequest(request, d.Get("request_headers").(map[string]interface{}), d.Get("request_query").(map[string]interface{}), d.Get("request_basicauth").([]interface{}), d.Get("request_client_certificate").([]interface{}), d.Get("request_proxy").([]interface{}), d.Get("request_metadata").(map[string]interface{}))
 
 	config := datadogV1.NewSyntheticsAPITestConfigWithDefaults()
 
@@ -1516,9 +1539,10 @@ func buildSyntheticsAPITestStruct(d *schema.ResourceData) *datadogV1.SyntheticsA
 				request.SetTimeout(float64(requestMap["timeout"].(int)))
 				request.SetAllowInsecure(requestMap["allow_insecure"].(bool))
 				request.SetFollowRedirects(requestMap["follow_redirects"].(bool))
+				request.SetPersistCookies(requestMap["persist_cookies"].(bool))
 			}
 
-			request = *completeSyntheticsTestRequest(request, stepMap["request_headers"].(map[string]interface{}), stepMap["request_query"].(map[string]interface{}), stepMap["request_basicauth"].([]interface{}), stepMap["request_client_certificate"].([]interface{}), stepMap["request_proxy"].([]interface{}))
+			request = *completeSyntheticsTestRequest(request, stepMap["request_headers"].(map[string]interface{}), stepMap["request_query"].(map[string]interface{}), stepMap["request_basicauth"].([]interface{}), stepMap["request_client_certificate"].([]interface{}), stepMap["request_proxy"].([]interface{}), map[string]interface{}{})
 
 			step.SetRequest(request)
 
@@ -1571,7 +1595,7 @@ func buildSyntheticsAPITestStruct(d *schema.ResourceData) *datadogV1.SyntheticsA
 	return syntheticsTest
 }
 
-func completeSyntheticsTestRequest(request datadogV1.SyntheticsTestRequest, requestHeaders map[string]interface{}, requestQuery map[string]interface{}, basicAuth []interface{}, requestClientCertificates []interface{}, requestProxy []interface{}) *datadogV1.SyntheticsTestRequest {
+func completeSyntheticsTestRequest(request datadogV1.SyntheticsTestRequest, requestHeaders map[string]interface{}, requestQuery map[string]interface{}, basicAuth []interface{}, requestClientCertificates []interface{}, requestProxy []interface{}, requestMetadata map[string]interface{}) *datadogV1.SyntheticsTestRequest {
 	if len(requestHeaders) > 0 {
 		headers := make(map[string]string, len(requestHeaders))
 
@@ -1731,6 +1755,16 @@ func completeSyntheticsTestRequest(request datadogV1.SyntheticsTestRequest, requ
 		}
 	}
 
+	if len(requestMetadata) > 0 {
+		metadata := make(map[string]string, len(requestMetadata))
+
+		for k, v := range requestMetadata {
+			metadata[k] = v.(string)
+		}
+
+		request.SetMetadata(metadata)
+	}
+
 	return &request
 }
 
@@ -1837,6 +1871,9 @@ func buildAssertions(attr []interface{}) []datadogV1.SyntheticsAssertion {
 						} else {
 							assertionTarget.SetTarget(v.(string))
 						}
+					}
+					if v, ok := assertionMap["timings_scope"].(string); ok && len(v) > 0 {
+						assertionTarget.SetTimingsScope(datadogV1.SyntheticsAssertionTimingsScope(v))
 					}
 					if v, ok := assertionMap["targetjsonpath"].([]interface{}); ok && len(v) > 0 {
 						log.Printf("[WARN] targetjsonpath shouldn't be specified for non-validatesJSONPath operator, only target")
@@ -1973,11 +2010,15 @@ func buildTestOptions(d *schema.ResourceData) *datadogV1.SyntheticsTestOptions {
 				rumSettings.SetIsEnabled(true)
 
 				if applicationId, ok := settings["application_id"]; ok {
-					rumSettings.SetApplicationId(applicationId.(string))
+					if len(applicationId.(string)) > 0 {
+						rumSettings.SetApplicationId(applicationId.(string))
+					}
 				}
 
 				if clientTokenId, ok := settings["client_token_id"]; ok {
-					rumSettings.SetClientTokenId(int64(clientTokenId.(int)))
+					if clientTokenId.(int) != 0 {
+						rumSettings.SetClientTokenId(int64(clientTokenId.(int)))
+					}
 				}
 			} else {
 				rumSettings.SetIsEnabled(false)
@@ -2307,6 +2348,9 @@ func buildLocalRequest(request datadogV1.SyntheticsTestRequest) map[string]inter
 	if request.HasCertificateDomains() {
 		localRequest["certificate_domains"] = request.GetCertificateDomains()
 	}
+	if request.HasPersistCookies() {
+		localRequest["persist_cookies"] = request.GetPersistCookies()
+	}
 
 	return localRequest
 }
@@ -2328,6 +2372,9 @@ func buildLocalAssertions(actualAssertions []datadogV1.SyntheticsAssertion) (loc
 			}
 			if v, ok := assertionTarget.GetTypeOk(); ok {
 				localAssertion["type"] = string(*v)
+			}
+			if assertionTarget.HasTimingsScope() {
+				localAssertion["timings_scope"] = assertionTarget.GetTimingsScope()
 			}
 		} else if assertion.SyntheticsAssertionJSONPathTarget != nil {
 			assertionTarget := assertion.SyntheticsAssertionJSONPathTarget
@@ -2925,6 +2972,9 @@ func updateSyntheticsAPITestLocalState(d *schema.ResourceData, syntheticsTest *d
 		return diag.FromErr(err)
 	}
 	if err := d.Set("request_query", actualRequest.GetQuery()); err != nil {
+		return diag.FromErr(err)
+	}
+	if err := d.Set("request_metadata", actualRequest.GetMetadata()); err != nil {
 		return diag.FromErr(err)
 	}
 
